@@ -6,12 +6,12 @@ everywhere; one miss and the whole message is rejected with HTTP 400. Text writt
 guarantee that. HTML mode only needs & < > escaped, which is far more robust.
 
 Supports: **bold** / __bold__ / `code` / [text](https://link) / # headings → bold / - * + lists → • /
-> quotes → <blockquote> / ``` code blocks → <pre> / tables → aligned monospace <pre> (Telegram has no tables) /
+> quotes → <blockquote> / ``` code blocks → <pre> / tables → card-style lists (Telegram has no tables, and monospace alignment breaks for CJK on phones) /
 --- rules → a line.
 to_plain(): strip Markdown symbols for a plain-text fallback when Telegram still rejects the HTML.
 split_html_safe(): split by source lines so a chunk never cuts through a tag, table or code block.
 """
-import html, re, unicodedata
+import html, re
 
 _LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
 _BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__")
@@ -30,19 +30,29 @@ def _inline(t):
     return re.sub(r"\x00(\d+)\x00", lambda m: slots[int(m.group(1))], t)
 
 
-def _width(s):
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
-
-
 def _table(rows):
-    rows = [[re.sub(r"\*\*|__|`", "", c).strip() for c in r] for r in rows]
+    """Telegram has no tables, and monospace alignment fails on phones (CJK falls back to a system font whose
+    width is ~1.6-1.8x Latin, varying by client). Render as cards instead:
+    2 columns → "• left：right"; 3+ columns → bold first cell as the title, then "header：cell" lines, blank line between rows.
+    Bold / code / links inside cells are still rendered."""
+    rows = [[c.strip() for c in r] for r in rows]
+    bare = lambda c: re.sub(r"^(\*\*|__)(.+)\1$", r"\2", c)       # avoid <b><b> when the first cell is already bold
+    head, body = (rows[0], rows[1:]) if len(rows) > 1 else ([], rows)
     n = max(len(r) for r in rows)
-    rows = [r + [""] * (n - len(r)) for r in rows]
-    w = [max(_width(r[i]) for r in rows) for i in range(n)]
-    out = [" │ ".join(c + " " * (w[i] - _width(c)) for i, c in enumerate(r)).rstrip() for r in rows]
-    if len(out) > 1:
-        out.insert(1, "─┼─".join("─" * x for x in w))
-    return "<pre>" + html.escape("\n".join(out), quote=False) + "</pre>"
+    out = []
+    for r in body:
+        r = r + [""] * (n - len(r))
+        if n <= 2:
+            out.append("• <b>" + _inline(bare(r[0])) + "</b>" + ("：" + _inline(r[1]) if n == 2 and r[1] else ""))
+            continue
+        card = ["▪️ <b>" + _inline(bare(r[0])) + "</b>"]
+        for i in range(1, n):
+            if not r[i]:
+                continue
+            label = head[i] if i < len(head) and head[i] else ""
+            card.append("    " + (html.escape(re.sub(r"\*\*|__|`", "", label), quote=False) + "：" if label else "") + _inline(r[i]))
+        out.append("\n".join(card))
+    return ("\n\n" if n > 2 else "\n").join(out)
 
 
 def to_html(md):

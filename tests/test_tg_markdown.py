@@ -17,10 +17,15 @@ class T(unittest.TestCase):
         h = t.to_html("# 标题\n- 一\n  - 二\n> 引用\n---\n|代码|名称|\n|---|---|\n|600498|烽火通信|")
         self.assertIn("<b>标题</b>", h); self.assertIn("• 一", h); self.assertIn("  • 二", h)
         self.assertIn("<blockquote>引用</blockquote>", h); self.assertIn("────────", h)
-        self.assertIn("<pre>代码   │ 名称\n", h); self.assertIn("600498 │ 烽火通信</pre>", h)
+        self.assertIn("• <b>600498</b>：烽火通信", h)
 
     def test_javascript_link_not_linked(self):
         self.assertNotIn("<a ", t.to_html("[x](javascript:alert(1))"))
+
+    def test_table_cards(self):
+        h = t.to_html("| 代码 | 名称 | 涨跌 |\n|---|---|---|\n| **600498** | 烽火通信 | +3.2% |\n| 0700 | 腾讯 | |")
+        self.assertEqual(h, "▪️ <b>600498</b>\n    名称：烽火通信\n    涨跌：+3.2%\n\n▪️ <b>0700</b>\n    名称：腾讯")
+        self.assertEqual(t.to_html("| k | v |\n|---|---|\n| a | **b** |"), "• <b>a</b>：<b>b</b>")
 
     def test_plain(self):
         self.assertEqual(t.to_plain("# 标题\n**粗** `c` [l](https://a.b)\n- x"), "标题\n粗 c l https://a.b\n• x")
